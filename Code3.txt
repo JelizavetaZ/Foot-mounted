@@ -1,0 +1,66 @@
+package test_arduino;
+
+import java.net.DatagramPacket;
+import java.net.DatagramSocket;
+import java.net.InetAddress;
+
+public class server {
+
+
+    public static void main(String[] args) {
+    	Thread t1 =new Thread(new Second_server());
+    	t1.start();
+        try
+        {
+            DatagramSocket serverSocket = new DatagramSocket(9666);
+            DatagramSocket serverSocket1 = new DatagramSocket(9876);
+
+            byte[] receiveData = new byte[1024];
+            //byte[] sendData = new byte[1024];
+            byte[] sendData1 = new byte[3];
+            
+            
+            while (true) {
+            	try{
+                DatagramPacket receivePacket = new DatagramPacket(receiveData, receiveData.length);               
+                serverSocket.receive(receivePacket);
+                String sentence = new String(receivePacket.getData());
+                String name = sentence.substring(0, sentence.indexOf('.'));
+               
+                String[] barray = name.split("\\|"); 
+                System.out.println(barray[0] + "  " + barray[1]);
+                //System.out.println(barray[2]);
+                String newWord = barray[0]+barray[1];
+                char[] outputChar = newWord.toCharArray();
+                for (int b = 0; b<2; b++){
+                	sendData1[b] =(byte)outputChar[b]; 
+                
+                }
+                
+               
+                int port = 9678;
+                InetAddress address1 = InetAddress.getByName("localhost");
+                DatagramPacket packet = new DatagramPacket(sendData1, sendData1.length,address1, port);
+                packet.getPort();
+                DatagramSocket dsocket = new DatagramSocket();
+     	       	dsocket.send(packet);
+     	       	dsocket.close();
+            
+            }
+            	catch (Exception ex1){
+                	System.out.println(ex1);
+                }
+        }
+            
+        }
+
+        
+        catch(Exception ex)
+        {
+        	System.out.println(ex);
+        }
+        
+       
+    }
+    
+}

@@ -1,0 +1,522 @@
+
+
+// include the library code:
+#include <LiquidCrystal.h>
+#include <ESP8266WiFi.h>
+#include <WiFiUDP.h>
+
+
+//|||||||||||||||||||||||||| LCD Stuff ||||||||||||||||||||||||||||
+// initialize the library with the numbers of the interface pins
+LiquidCrystal lcd(0, 2, 14, 12, 13, 15);
+int multiplexerInput = 16;
+int multiplexSignal[] = {5,4,3,1};
+int values[16];
+int Dist1 = 25;
+int Dist2 = 25;
+int Dist3 = 25;
+int Del1 = 25;
+int Del2 = 25;
+int Del3 = 25;
+int Rev1 = 25;
+int Rev2 = 25;
+int Rev3 = 25;
+int b1LastState, b2LastState, b3LastState, lastCounter1, lastCounter2,lastCounter3;
+bool stateDetection = false;
+bool settingDisplayChange = false;
+bool wifiOpen = false;
+byte currentEffect, lastEffect;
+
+
+//|||||||||||||||||||||||||| WIFI STUFF HERE |||||||||||||||||||||||||||||||
+// wifi connection variables
+const char* ssid = "Pi3-AP";
+const char* password = "raspberry";
+String outputString;
+
+boolean wifiConnected = false;
+
+// UDP variables
+unsigned int localPort = 9899;
+WiFiUDP UDP;
+boolean psk;
+boolean udpConnected = false;
+char packetBuffer[UDP_TX_PACKET_MAX_SIZE]; //buffer to hold incoming packet,
+//char ReplyBuffer[]; // a string to send back
+//char ReplyBuffer[UDP_TX_PACKET_MAX_SIZE];
+char ReplyBuffer[UDP_TX_PACKET_MAX_SIZE];
+// connect to wifi – returns true if successful or false if not
+boolean connectWifi(){
+boolean state = true;
+int i = 0;
+WiFi.begin(ssid, password);
+Serial.println("");
+Serial.println("Connecting to WiFi");
+
+// Wait for connection
+Serial.print("Connecting");
+while (WiFi.status() != WL_CONNECTED) {
+delay(500);
+Serial.print(".");
+if (i > 10){
+state = false;
+break;
+}
+i++;
+}
+if (state){
+Serial.println("");
+Serial.print("Connected to ");
+Serial.println(ssid);
+Serial.print("IP address: ");
+Serial.println(WiFi.localIP());
+
+
+}
+else {
+Serial.println("");
+Serial.println("Connection failed.");
+
+}
+return state;
+}
+// connect to UDP – returns true if successful or false if not
+boolean connectUDP(){
+boolean state = false;
+
+Serial.println("");
+Serial.println("Connecting to UDP");
+
+if(UDP.begin(localPort) == 1){
+Serial.println("Connection successful");
+state = true;
+}
+else{
+Serial.println("Connection failed");
+}
+
+return state;
+}
+
+//||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
+
+
+
+void setup() {
+
+  //||||||||||||||||||||||||||| setup for LCD |||||||||||||||||||||||||||||||||||||
+  // set up the LCD's number of columns and rows:
+  lcd.begin(16, 2);
+  // Print a message to the LCD.
+  //lcd.print("hello, world!");
+  Serial.begin(115200);
+  pinMode(multiplexerInput, INPUT);
+  for (int i =0;i<4;i++)
+  {
+    pinMode(multiplexSignal[i], OUTPUT);
+  }
+
+  // wifi stuff
+   //Serial.begin(115200);
+
+    // Initialise wifi connection
+    wifiConnected = connectWifi();
+
+    // only proceed if wifi connection successful
+    if(wifiConnected){
+    udpConnected = connectUDP();
+    if (udpConnected){
+
+    }
+    }
+
+  if(wifiConnected ==true){
+    lcd.print("wifi is connected");
+    delay(2000);
+    lcd.clear();
+  }
+  else{
+    lcd.print("wifi is not connected");
+    delay(2000);
+    lcd.clear();
+  }
+}
+
+void displayBinary(byte numToShow)
+{
+  for (int i =0;i<4;i++)
+  {
+    if (bitRead(numToShow, i)==1)
+    {
+      digitalWrite(multiplexSignal[i], HIGH); 
+      //Serial.println("1");
+    }
+    else
+    {
+      digitalWrite(multiplexSignal[i], LOW); 
+      //Serial.println("0");
+    }
+  }
+
+}
+
+void loop() {
+
+  //|||||||||||||||||||||||| loop for LCD ||||||||||||||||||||||||||||||||||||||||||||||
+  for (byte counter =0;counter<16; counter++)
+  {
+    displayBinary(counter); 
+    values[counter] = digitalRead(multiplexerInput);
+  }
+
+
+  if (values[6] ==1){
+    currentEffect = 1;
+  }
+  else if (values[7] ==1){
+    currentEffect = 2;
+  }
+  else if(values[6] ==0 && values[7] ==0){
+    currentEffect = 3;
+  }
+  if(currentEffect !=lastEffect){
+    //stateDetection = true;
+    settingDisplayChange = true;
+  }
+  lastEffect = currentEffect;
+
+
+  
+  if(currentEffect ==1){
+  if(values[0] != b1LastState){
+      if( values[0]==LOW){
+        if(values[1] ==HIGH){
+          Dist1++;   
+          if(Dist1>=50){
+            Dist1 = 50;    
+          }
+        }
+        else{
+          Dist1--;
+          if(Dist1<=0){
+            Dist1 =0;
+          }
+        } 
+    }
+    stateDetection = true;
+  }
+  b1LastState = values[0];
+
+  if(values[2] != b2LastState){
+      if( values[2]==LOW){
+        if(values[3] ==HIGH){
+          Dist2++; 
+          if(Dist2>=50){
+            Dist2 = 50;      
+          }
+        }
+        else{
+          Dist2--;
+          if(Dist2<=0){
+            Dist2 = 0;
+          }
+        } 
+    }
+    stateDetection = true;
+  }
+  b2LastState = values[2];
+
+
+  if(values[4] != b3LastState){
+    if( values[4]==LOW){
+      if(values[5] ==HIGH){
+        Dist3++;   
+        if(Dist3>=50){
+          Dist3 = 50;    
+        }
+      }
+      else{
+        Dist3--;
+        if(Dist3<=0){
+          Dist3 = 0;
+        }
+      } 
+    }
+    stateDetection = true;
+  }
+  b3LastState = values[4];
+  
+  }
+  else if(currentEffect ==2){
+  if(values[0] != b1LastState){
+      if( values[0]==LOW){
+        if(values[1] ==HIGH){
+          Del1++;   
+          if(Del1>=50){
+            Del1 = 50;    
+          }
+        }
+        else{
+          Del1--;
+          if(Del1<=0){
+            Del1 = 0;
+          }
+        } 
+    }
+    stateDetection = true;
+  }
+  b1LastState = values[0];
+
+  if(values[2] != b2LastState){
+      if( values[2]==LOW){
+        if(values[3] ==HIGH){
+          Del2++;  
+          if(Del2>=50){
+            Del2 = 50;     
+          }
+        }
+        else{
+          Del2--;
+          if(Del2<=0){
+            Del2 = 0;
+          }
+        } 
+    }
+    stateDetection = true;
+  }
+  b2LastState = values[2];
+
+
+  if(values[4] != b3LastState){
+    if( values[4]==LOW){
+      if(values[5] ==HIGH){
+        Del3++; 
+        if(Del3>=50){
+          Del3 = 50;      
+        }
+      }
+      else{
+        Del3--;
+        if(Del3<=0){
+          Del3 = 0;
+        }
+      } 
+    }
+    stateDetection = true;
+  }
+  b3LastState = values[4];
+  
+  }
+  else if(currentEffect ==3){
+  if(values[0] != b1LastState){
+      if( values[0]==LOW){
+        if(values[1] ==HIGH){
+          Rev1++;   
+          if(Rev1>=50){
+            Rev1 = 50;    
+          }
+        }
+        else{
+          Rev1--;
+          if(Rev1<=0){
+            Rev1 = 0;
+          }
+        } 
+    }
+    stateDetection = true;
+  }
+  b1LastState = values[0];
+
+  if(values[2] != b2LastState){
+      if( values[2]==LOW){
+        if(values[3] ==HIGH){
+          Rev2++;  
+          if(Rev2>=50){
+            Rev2 = 50;     
+          }
+        }
+        else{
+          Rev2--;
+          if(Rev2<=0){
+            Rev2 = 0;
+          }
+        } 
+    }
+    stateDetection = true;
+  }
+  b2LastState = values[2];
+
+
+  if(values[4] != b3LastState){
+    if( values[4]==LOW){
+      if(values[5] ==HIGH){
+        Rev3++;  
+        if(Rev3>=50){
+          Rev3 = 50;     
+        }
+      }
+      else{
+        Rev3--;
+        if(Rev3<=0){
+          Rev3 = 0;
+        }
+      } 
+    }
+    stateDetection = true;
+  }
+  b3LastState = values[4];
+  
+  }
+  if(settingDisplayChange ==true){
+    lcd.clear();
+    if(currentEffect ==1){
+      lcd.setCursor(0,0);
+      lcd.print("Distortion");
+      lcd.setCursor(0,1);
+      lcd.print("Settings:");
+      stateDetection = true;
+      delay(900);
+    }
+    if(currentEffect ==2){
+      lcd.setCursor(0,0);
+      lcd.print("Delay");
+      lcd.setCursor(0,1);
+      lcd.print("Settings:");
+      stateDetection = true;
+      delay(900);
+    }
+    if(currentEffect ==3){
+      lcd.setCursor(0,0);
+      lcd.print("Reverb");
+      lcd.setCursor(0,1);
+      lcd.print("Settings:");
+      stateDetection = true;
+      delay(900);
+    }
+    
+    settingDisplayChange =false;
+  }
+  
+
+  if (stateDetection == true){
+    if(currentEffect ==1){
+      lcd.clear();
+      lcd.setCursor(0, 0);
+      lcd.print("Tone: Dist: Lvl: ");
+      lcd.setCursor(0,1);
+      lcd.print(Dist1);
+      lcd.setCursor(7,1);
+      lcd.print(Dist2);
+      lcd.setCursor(13,1);
+      lcd.print(Dist3);
+      
+    }
+    else if(currentEffect ==2){
+      lcd.clear();
+      lcd.setCursor(0, 0);
+      lcd.print("Time: Mix: Rpt: ");
+      lcd.setCursor(0,1);
+      lcd.print(Del1);
+      lcd.setCursor(7,1);
+      lcd.print(Del2);
+      lcd.setCursor(13,1);
+      lcd.print(Del3);
+      
+    }
+    else if(currentEffect ==3){
+      lcd.clear();
+      lcd.setCursor(0, 0);
+      lcd.print("Rvrb: Mix: Fltr: ");
+      lcd.setCursor(0,1);
+      lcd.print(Rev1);
+      lcd.setCursor(7,1);
+      lcd.print(Rev2);
+      lcd.setCursor(13,1);
+      lcd.print(Rev3);
+      
+    }
+
+
+
+    stateDetection =false;
+    wifiOpen = true;
+  }
+
+   //|||||||||||||||||||||||||||| LOOP FOR WIFI |||||||||||||||||||||||||||||||||||||||||||||||
+    
+
+    for(int o=0;o<UDP_TX_PACKET_MAX_SIZE;o++){packetBuffer[o]=NULL;}
+    
+
+    if(wifiOpen == true){
+    if(wifiConnected){
+      if(udpConnected){
+        // send a reply, to the IP address and port that sent us the packet we received
+          //String pedalNumber2 = String(pedalNumber) + "|";
+          if(currentEffect == 1){
+              outputString = String(currentEffect) +"|"  + String(Dist1)+"|" +String(Dist2)+"|" + String(Dist3)+ ".";
+          }
+          else if(currentEffect ==2){
+            outputString = String(currentEffect)+"|" +  String(Del1)+"|" + String(Del2) +"|"+  String(Del3 )+".";
+          }
+          else if(currentEffect ==3){
+            outputString = String(currentEffect) +"|"+ String(Rev1)+"|" + String(Rev2)+"|" + String(Rev3 )+".";
+          }
+
+
+          
+          outputString.toCharArray(ReplyBuffer,UDP_TX_PACKET_MAX_SIZE );
+
+          UDP.beginPacket("172.24.1.1", 2223);
+          UDP.write(ReplyBuffer);
+
+          
+          UDP.endPacket();
+
+
+          // if there’s data available, read a packet
+          int packetSize = UDP.parsePacket();
+          if(packetSize)
+          {
+
+            Serial.println("");
+            Serial.print("Received packet of size ");
+            Serial.println(packetSize);
+            Serial.print("From ");
+            IPAddress remote = UDP.remoteIP();
+            for (int i =0; i < 4; i++)
+            {
+              Serial.print(remote[i], DEC);
+              if (i < 3)
+              {
+                Serial.print(".");
+              }
+            }
+            Serial.print(", port ");
+            Serial.println(UDP.remotePort());
+
+            // read the packet into packetBufffer
+            UDP.read(packetBuffer,UDP_TX_PACKET_MAX_SIZE);
+            Serial.println("Contents:");
+            //int value = packetBuffer[0]*256 + packetBuffer[1];
+            //String value = String(packetBuffer);
+            Serial.println(packetBuffer);
+            // turn LED on or off depending on value recieved
+            //digitalWrite(5,value);
+          }
+          delay(10);
+
+        }
+
+    }
+        wifiOpen = false;
+    }
+
+
+
+
+    //|||||||||||||||||||||||||||||||||||||||
+ 
+  //|||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
+ 
+}

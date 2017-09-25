@@ -1,0 +1,416 @@
+
+//|||||||||||||||||||||||| INCLUDE STUFF ||||||||||||||||||||||||||||||||||||||||||||||
+#include "Wire.h"
+#include "I2Cdev.h"
+#include "MPU9250.h"
+#include "BMP180.h"
+#include <ESP8266WiFi.h>
+#include <WiFiUDP.h>
+
+//|||||||||||||||||||||||| INTIALIZERS AND VARIABLES FOR GYROSCOPE |||||||||||||||||||||||||||||||||||||||||
+MPU9250 accelgyro;
+I2Cdev   I2C_M;
+uint8_t buffer_m[6];
+int16_t ax, ay, az;
+int16_t gx, gy, gz;
+int16_t   mx, my, mz;
+int theAngleOfTurn = 0;
+int theAngleOfTurn2 = 0;
+int wahWahAngle = 0;
+bool theManIsWalking;
+bool wahWahActive = false;
+bool pedalIsActivated = false;
+int GyroX, GyroY, GyroZ, AccelX, AccelY, AccelZ;
+int analogPin = A0;
+int axelValue = 0;
+byte pedalStatus[3];
+String outputString;
+int timer = 1000;
+float heading;
+float tiltheading;
+float Axyz[3];
+float Gxyz[3];
+float Mxyz[3];
+bool wifiIsConnected=false;
+bool whichEffectIsAboutTo = false;
+int toeIsHigh = false;
+
+//SETTINGS//
+
+int walkingThreshold =40;
+int timerTime = 20;
+
+
+// END OF SETTINGS//
+
+
+
+#define sample_num_mdate  5000
+
+volatile float mx_sample[3];
+volatile float my_sample[3];
+volatile float mz_sample[3];
+
+static float mx_centre = 0;
+static float my_centre = 0;
+static float mz_centre = 0;
+
+volatile int mx_max = 0;
+volatile int my_max = 0;
+volatile int mz_max = 0;
+
+volatile int mx_min = 0;
+volatile int my_min = 0;
+volatile int mz_min = 0;
+
+//|||||||||||||||||||||||||| WIFI STUFF HERE |||||||||||||||||||||||||||||||
+
+const char* ssid = "Pi3-AP";
+const char* password = "raspberry";
+//const char* ssid = "NETGEAR28";
+//const char* password = "huskyumbrella091";
+
+
+boolean wifiConnected = false;
+
+// UDP variables
+unsigned int localPort = 9899;
+WiFiUDP UDP;
+boolean psk;
+boolean udpConnected = false;
+char packetBuffer[UDP_TX_PACKET_MAX_SIZE]; //buffer to hold incoming packet,
+char ReplyBuffer[10];
+// connect to wifi – returns true if successful or false if not
+boolean connectWifi(){
+boolean state = true;
+int i = 0;
+WiFi.begin(ssid, password);
+Serial.println("");
+Serial.println("Connecting to WiFi");
+
+// Wait for connection
+Serial.print("Connecting");
+while (WiFi.status() != WL_CONNECTED) {
+delay(500);
+Serial.print(".");
+if (i > 10){
+state = false;
+break;
+}
+i++;
+}
+if (state){
+  
+Serial.println("");
+Serial.print("Connected to ");
+Serial.println(ssid);
+Serial.print("IP address: ");
+Serial.println(WiFi.localIP());
+ digitalWrite(2,HIGH);
+ delay(300);
+  digitalWrite(2,LOW);
+
+}
+else {
+  
+Serial.println("");
+Serial.println("Connection failed.");
+digitalWrite(0,HIGH);
+delay(300);
+digitalWrite(0,LOW);
+}
+return state;
+}
+// connect to UDP – returns true if successful or false if not
+boolean connectUDP(){
+boolean state = false;
+Serial.println("");
+Serial.println("Connecting to UDP");
+if(UDP.begin(localPort) == 1){
+Serial.println("Connection successful");
+state = true;
+}
+else{
+Serial.println("Connection failed");
+}
+
+return state;
+}
+
+//||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
+
+void setup()
+{
+  // |||||||||||||||||||||||| SETUP FOR GYRO |||||||||||||||||||||||||||||||
+    // join I2C bus (I2Cdev library doesn't do this automatically)
+    Wire.begin();
+    Serial.begin(115200);
+    pinMode(0, OUTPUT);
+    pinMode(2, OUTPUT);
+    pinMode(14, OUTPUT);
+    pinMode(16,OUTPUT);
+
+    // initialize device
+    Serial.println("Initializing I2C devices...");
+    accelgyro.initialize();
+    //Barometer.init();
+
+    // verify connection
+    Serial.println("Testing device connections...");
+    Serial.println(accelgyro.testConnection() ? "MPU9250 connection successful" : "MPU9250 connection failed");
+
+    delay(1000);
+    Serial.println("     ");
+
+    //||||||||||||||||||||||||| SETUP FOR WIFI |||||||||||||||||||||||||||||||||||||||||||||||
+    
+    // Initialise Serial connection
+    Serial.begin(115200);
+
+    // Initialise wifi connection
+    wifiConnected = connectWifi();
+
+    // only proceed if wifi connection successful
+    if(wifiConnected){
+    udpConnected = connectUDP();
+    if (udpConnected){
+
+    }
+    }
+
+    //|||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
+
+}
+void activateVibrator(void){
+  digitalWrite(16,HIGH);
+  delay(150);
+  digitalWrite(16,LOW);
+}
+
+void doubleVibrator(void){
+  digitalWrite(16,HIGH);
+  delay(150);
+  digitalWrite(16,LOW);
+  delay(80);
+  digitalWrite(16,HIGH);
+  delay(150);
+  digitalWrite(16,LOW);
+}
+
+void getGyro_Data(void)
+{
+    accelgyro.getMotion9(&ax, &ay, &az, &gx, &gy, &gz, &mx, &my, &mz);
+    Gxyz[0] = (double) gx * 250 / 32768;
+    Gxyz[1] = (double) gy * 250 / 32768;
+    Gxyz[2] = (double) gz * 250 / 32768;
+    Axyz[0] = int((double) ax / 100)+15;
+    //Axyz[1] = int((double) ay / 100)-160;
+    //Axyz[2] = int((double) az / 100)+10;
+}
+
+
+void redLed(void){
+  digitalWrite(0,HIGH);
+  digitalWrite(2,LOW);
+  digitalWrite(14,LOW);
+}
+void greenLed(void){
+  digitalWrite(0,LOW);
+  digitalWrite(2,HIGH);
+  digitalWrite(14,LOW);
+}
+void blueLed(void){
+  digitalWrite(0,LOW);
+  digitalWrite(2,LOW);
+  digitalWrite(14,HIGH);
+}
+void redGreenLed(void){
+  digitalWrite(0,HIGH);
+  digitalWrite(2,HIGH);
+  digitalWrite(14,LOW);
+  
+}
+void deactivateLeds(void){
+  digitalWrite(0,LOW);
+  digitalWrite(2,LOW);
+  digitalWrite(14,LOW);
+}
+void resetPedal(void){
+  theAngleOfTurn = 0;
+  theAngleOfTurn2 =0;
+  pedalIsActivated = false;
+  deactivateLeds();
+  
+  //activateVibrator();
+}
+void sendDataFunction(int x ,int y, int z){
+      if(wifiConnected){
+      if(udpConnected){
+          outputString = String(x) + "|"+ String(y) + ".";
+          outputString.toCharArray(ReplyBuffer,10 );
+          UDP.beginPacket("172.24.1.1", 2222);
+          //UDP.beginPacket("192.168.1.10", 9666);
+          UDP.write(ReplyBuffer);
+          Serial.println(outputString);
+          UDP.endPacket();    
+          delay(z); 
+        }
+    }
+}
+void shineLED(void){
+  if(theAngleOfTurn>-130 && theAngleOfTurn<130){
+    greenLed();
+  }
+  else if (theAngleOfTurn< -130){
+    blueLed();
+  }
+  else {
+    redLed();
+  }  
+}
+void calibrateYZ(void){
+  if (GyroY>-3 && GyroY<3){
+    GyroY = 0;
+  }
+  if (GyroZ>-3 && GyroZ<3){
+    GyroZ = 0;
+  }
+}
+void performEffectActivation(void){
+  if(theAngleOfTurn>-130 && theAngleOfTurn<130){
+  if(pedalStatus[1] ==0){
+  pedalStatus[1] =1;
+  }
+  else{
+    pedalStatus[1] =0;
+    }
+    sendDataFunction(1,pedalStatus[1],100);
+    
+    timer = 0;
+  
+    
+  } 
+  else if (theAngleOfTurn< -130){
+    if(pedalStatus[2] ==0){
+    pedalStatus[2] =1;
+    }
+    else{
+      pedalStatus[2] =0;
+    }
+    sendDataFunction(2,pedalStatus[2],100);
+   
+    timer = 0;
+    
+    
+  }
+  else{
+    if(pedalStatus[0] ==0){
+    pedalStatus[0] =1;
+    }
+    else{
+      pedalStatus[0] =0;
+    }
+    sendDataFunction(0,pedalStatus[0],100);
+    timer = 0;
+  
+     
+  }               
+}
+
+
+
+
+void loop()
+{
+    for(int o=0;o<UDP_TX_PACKET_MAX_SIZE;o++){packetBuffer[o]=NULL;}  
+    getGyro_Data();
+    GyroX = int(Gxyz[0]);
+    GyroY = int(Gxyz[1]);
+    GyroZ = int(Gxyz[2]);
+    //Serial.println(String(GyroX) + "   " +String(GyroY) + "    "+ String(GyroZ));
+    //Serial.println(GyroZ);
+
+    if(wahWahActive == false){
+    // it was 40
+    if (timer<timerTime){
+      timer++;
+      if(timer ==timerTime){
+        resetPedal();
+      }
+    }    
+    
+    if(pedalIsActivated == false){
+    if (GyroX>-3 && GyroX<3){
+        GyroX = 0;    
+    } 
+
+     //||||||||||||||||||||||||||| CHECKS IF PERSON WALKS ||||||||||||||||||
+    if (GyroZ<walkingThreshold && GyroZ> -walkingThreshold && GyroY>-walkingThreshold && GyroY<walkingThreshold ){
+      theManIsWalking = false;
+    }
+    else{
+      theManIsWalking = true;
+    }
+    //|||||||||||||||||||||||||| IF HE STANDS STEEL THE PEDAL CAN BE ACTIVATED|||||||||||||||||||
+
+    if(theManIsWalking ==false){
+        theAngleOfTurn2 = theAngleOfTurn2 +(GyroX*0.2);
+        //Thresholding for Gyro
+        if (theAngleOfTurn2<20){
+            theAngleOfTurn2 = 0;
+        }     
+       
+        //it was 140
+        if(theAngleOfTurn2 >150){
+            pedalIsActivated = true;
+            Serial.println("Pedal is on");
+            doubleVibrator();     
+        }
+    }   
+    }
+  
+    if( pedalIsActivated ==true){
+        calibrateYZ();
+        theAngleOfTurn = theAngleOfTurn +(GyroY*0.3);
+        shineLED();
+        if (GyroZ<-160 ){   
+        performEffectActivation();   
+        activateVibrator();
+        Serial.println("vibration should be performed");      
+        }
+       
+       if(GyroZ>200){
+          Serial.println("there was punchh! Number is " + String(GyroZ));
+          wahWahActive=true;
+          activateVibrator();
+          resetPedal();
+          delay(500);
+        }
+        
+    }
+    }
+    if (wahWahActive ==true){
+        wahWahAngle = wahWahAngle+ (GyroZ*0.4);
+        if(wahWahAngle<1){
+          wahWahAngle =0;
+        }
+        sendDataFunction(4,wahWahAngle+300,0);
+      
+        theAngleOfTurn2 = theAngleOfTurn2 +(GyroX*0.2);
+        if (theAngleOfTurn2<20){
+            theAngleOfTurn2 = 0;
+        }     
+        if(theAngleOfTurn2 >130){
+           wahWahActive =false;
+           sendDataFunction(4,10000,100);
+           wahWahAngle = 0;
+           resetPedal();
+          
+           
+            Serial.println("wah wah is off");  
+            activateVibrator();   
+        }
+      
+    }
+}
+
